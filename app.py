@@ -16,6 +16,9 @@ class ProfessionalSchoolApp(ctk.CTk):
         self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "school_system.db")
         self.init_db()
 
+        # قائمة لتخزين صفوف عناصر المهارات الديناميكية
+        self.skill_rows = []
+
         # --- Grid Layout (Sidebar + Main Content) ---
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -57,14 +60,22 @@ class ProfessionalSchoolApp(ctk.CTk):
     def init_db(self):
         conn = self.get_connection()
         cursor = conn.cursor()
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Students (
                 student_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_name TEXT UNIQUE NOT NULL,
                 grade_level TEXT NOT NULL,
-                class_name TEXT NOT NULL
+                class_name TEXT NOT NULL,
+                section TEXT NOT NULL DEFAULT 'عام'
             )
         ''')
+        
+        try:
+            cursor.execute("ALTER TABLE Students ADD COLUMN section TEXT NOT NULL DEFAULT 'عام'")
+        except sqlite3.OperationalError:
+            pass
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Grades (
                 grade_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,16 +112,21 @@ class ProfessionalSchoolApp(ctk.CTk):
         conn.commit()
         conn.close()
 
-    def get_or_create_student(self, cursor, name, grade, cls_name):
-        cursor.execute("SELECT student_id FROM Students WHERE student_name = ?", (name,))
+    def get_or_create_student(self, cursor, name, grade, cls_name, section="عام"):
+        cursor.execute("SELECT student_id, section FROM Students WHERE student_name = ?", (name,))
         row = cursor.fetchone()
         if row:
-            return row[0]
-        cursor.execute("INSERT INTO Students (student_name, grade_level, class_name) VALUES (?, ?, ?)", (name, grade, cls_name))
+            student_id = row[0]
+            if section != "عام" and row[1] != section:
+                cursor.execute("UPDATE Students SET section = ? WHERE student_id = ?", (section, student_id))
+            return student_id
+        
+        cursor.execute("INSERT INTO Students (student_name, grade_level, class_name, section) VALUES (?, ?, ?, ?)", 
+                       (name, grade, cls_name, section))
         return cursor.lastrowid
 
     def setup_views(self):
-        # 1. Grades View
+        # ---------------- 1. Grades View ----------------
         v_grades = ctk.CTkFrame(self.main_container, fg_color="transparent")
         ctk.CTkLabel(v_grades, text="رصد درجات الاختبارات", font=("Segoe UI", 22, "bold")).pack(pady=(15, 20))
 
@@ -118,16 +134,18 @@ class ProfessionalSchoolApp(ctk.CTk):
         scroll.pack(fill="both", expand=True)
 
         self.g_student = self.create_input(scroll, "اسم الطالبة الثلاثي:")
+        
+        lbl_sec = ctk.CTkLabel(scroll, text="القسم:", font=("Segoe UI", 13))
+        lbl_sec.pack(anchor="e", padx=50, pady=(5, 2))
+        self.g_section = ctk.CTkComboBox(scroll, values=["عام", "تحفيظ"], width=500, height=38, justify="right", state="readonly")
+        self.g_section.set("عام")
+        self.g_section.pack(pady=4)
+
         self.g_grade = self.create_input(scroll, "الصف الدراسي:")
         self.g_class = self.create_input(scroll, "الفصل:")
         self.g_subject = self.create_input(scroll, "المادة:")
         self.g_teacher = self.create_input(scroll, "اسم المعلمة:")
-
-        lbl = ctk.CTkLabel(scroll, text="نوع الاختبار:", font=("Segoe UI", 13))
-        lbl.pack(anchor="e", padx=50, pady=(5, 2))
-        self.g_exam = ctk.CTkComboBox(scroll, values=["اختبار قبلي", "اختبار بعدي", "كويز 1", "اختبار فترة 1", "اختبار فترة 2"], width=500, height=38, justify="right")
-        self.g_exam.pack(pady=5)
-
+        self.g_exam = self.create_input(scroll, "نوع الاختبار:")
         self.g_score = self.create_input(scroll, "الدرجة المستحقة:")
         self.g_max = self.create_input(scroll, "الدرجة العظمى:")
 
@@ -139,33 +157,55 @@ class ProfessionalSchoolApp(ctk.CTk):
 
         self.views["grades"] = v_grades
 
-        # 2. Skills View
+        # ---------------- 2. Dynamic Skills View ----------------
         v_skills = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        ctk.CTkLabel(v_skills, text="تقييم المهارات", font=("Segoe UI", 22, "bold")).pack(pady=(15, 20))
-        self.s_student = self.create_input(v_skills, "اسم الطالبة:")
-        self.s_subject = self.create_input(v_skills, "المادة:")
-        self.s_skill = self.create_input(v_skills, "اسم المهارة:")
+        ctk.CTkLabel(v_skills, text="تقييم المهارات", font=("Segoe UI", 22, "bold")).pack(pady=(10, 10))
+        
+        scroll_skills = ctk.CTkScrollableFrame(v_skills, width=600, height=520, fg_color="transparent")
+        scroll_skills.pack(fill="both", expand=True)
 
-        lbl2 = ctk.CTkLabel(v_skills, text="الحالة:", font=("Segoe UI", 13))
-        lbl2.pack(anchor="e", padx=50, pady=(5, 2))
-        self.s_mastered = ctk.CTkComboBox(v_skills, values=["متقن", "غير متقن"], width=500, height=38, justify="right")
-        self.s_mastered.pack(pady=5)
+        self.s_student = self.create_input(scroll_skills, "اسم الطالبة:")
+        self.s_subject = self.create_input(scroll_skills, "المادة:")
 
-        btn_s = ctk.CTkButton(v_skills, text="حفظ المهارة", command=self.save_skill, height=42, width=500, font=("Segoe UI", 14, "bold"), fg_color="#10B981", hover_color="#059669")
+        # منطقة المهارات الديناميكية
+        ctk.CTkLabel(scroll_skills, text="المهارات والتقييم:", font=("Segoe UI", 14, "bold")).pack(anchor="e", padx=50, pady=(15, 5))
+        
+        self.skills_container = ctk.CTkFrame(scroll_skills, fg_color="transparent")
+        self.skills_container.pack(fill="x", padx=50, pady=5)
+
+        # زر إضافة مهارة جديدة (+)
+        btn_add_skill = ctk.CTkButton(
+            scroll_skills, 
+            text="+ إضافة مهارة أخرى", 
+            command=self.add_skill_row, 
+            height=32, 
+            width=200, 
+            font=("Segoe UI", 12, "bold"), 
+            fg_color="#374151", 
+            hover_color="#4B5563"
+        )
+        btn_add_skill.pack(anchor="e", padx=50, pady=5)
+
+        btn_s = ctk.CTkButton(scroll_skills, text="حفظ جميع المهارات", command=self.save_skill, height=42, width=500, font=("Segoe UI", 14, "bold"), fg_color="#10B981", hover_color="#059669")
         btn_s.pack(pady=20)
-        self.s_status = ctk.CTkLabel(v_skills, text="", font=("Segoe UI", 13))
+        
+        self.s_status = ctk.CTkLabel(scroll_skills, text="", font=("Segoe UI", 13))
         self.s_status.pack()
 
         self.views["skills"] = v_skills
+        
+        # إدراج صف المهارة الأول تلقائياً عند تشغيل الواجهة
+        self.add_skill_row()
 
-        # 3. Attendance View
+        # ---------------- 3. Attendance View ----------------
         v_att = ctk.CTkFrame(self.main_container, fg_color="transparent")
         ctk.CTkLabel(v_att, text="تسجيل الغياب والحضور", font=("Segoe UI", 22, "bold")).pack(pady=(15, 20))
         self.a_student = self.create_input(v_att, "اسم الطالبة:")
 
         lbl3 = ctk.CTkLabel(v_att, text="الحالة:", font=("Segoe UI", 13))
         lbl3.pack(anchor="e", padx=50, pady=(5, 2))
-        self.a_status_combo = ctk.CTkComboBox(v_att, values=["حاضر", "غائب بعذر", "غائب بدون عذر", "تأخير"], width=500, height=38, justify="right")
+        self.a_status_combo = ctk.CTkComboBox(v_att, values=["حاضر", "غائب بعذر", "غائب بدون عذر", "تأخير"], width=500, height=38, justify="right", state="readonly")
+        self.a_status_combo.set("حاضر")
         self.a_status_combo.pack(pady=5)
 
         self.a_date = self.create_input(v_att, "التاريخ (YYYY-MM-DD):")
@@ -177,7 +217,7 @@ class ProfessionalSchoolApp(ctk.CTk):
 
         self.views["attendance"] = v_att
 
-        # 4. Database Info View
+        # ---------------- 4. Database Info View ----------------
         v_db_info = ctk.CTkFrame(self.main_container, fg_color="transparent")
         ctk.CTkLabel(v_db_info, text="بيانات وقاعدة الاتصال", font=("Segoe UI", 22, "bold")).pack(pady=(15, 10))
 
@@ -194,6 +234,46 @@ class ProfessionalSchoolApp(ctk.CTk):
         btn_refresh_db.pack(pady=10)
 
         self.views["db_info"] = v_db_info
+
+    def add_skill_row(self):
+        row_frame = ctk.CTkFrame(self.skills_container, fg_color="transparent")
+        row_frame.pack(fill="x", pady=4)
+
+        # زر حذف الصف
+        btn_remove = ctk.CTkButton(
+            row_frame, text="✕", width=30, height=36, 
+            fg_color="#EF4444", hover_color="#B91C1C",
+            command=lambda: self.remove_skill_row(row_frame)
+        )
+        btn_remove.pack(side="left", padx=(0, 5))
+
+        # ComboBox حالة المهارة
+        combo_status = ctk.CTkComboBox(
+            row_frame, values=["متقن", "غير متقن"], 
+            width=130, height=36, justify="right", state="readonly"
+        )
+        combo_status.set("متقن")
+        combo_status.pack(side="left", padx=5)
+
+        # Entry اسم المهارة
+        entry_skill = ctk.CTkEntry(
+            row_frame, placeholder_text="اسم المهارة", 
+            width=320, height=36, justify="right", font=("Segoe UI", 13)
+        )
+        entry_skill.pack(side="right", fill="x", expand=True)
+
+        self.skill_rows.append({
+            "frame": row_frame,
+            "entry": entry_skill,
+            "combo": combo_status
+        })
+
+    def remove_skill_row(self, row_frame):
+        if len(self.skill_rows) <= 1:
+            return  # الإبقاء على صف واحد على الأقل
+        
+        self.skill_rows = [r for r in self.skill_rows if r["frame"] != row_frame]
+        row_frame.destroy()
 
     def refresh_db_info(self):
         for widget in self.scroll_db_info.winfo_children():
@@ -260,15 +340,16 @@ class ProfessionalSchoolApp(ctk.CTk):
 
     def save_grade(self):
         student = self.g_student.get().strip()
+        section = self.g_section.get()
         grade_lvl = self.g_grade.get().strip()
         cls_name = self.g_class.get().strip()
         subject = self.g_subject.get().strip()
         teacher = self.g_teacher.get().strip()
-        exam = self.g_exam.get()
+        exam = self.g_exam.get().strip()
         score_str = self.g_score.get().strip()
         max_str = self.g_max.get().strip()
 
-        if not all([student, grade_lvl, cls_name, subject, teacher, score_str, max_str]):
+        if not all([student, grade_lvl, cls_name, subject, teacher, exam, score_str, max_str]):
             self.g_status.configure(text="يرجى تعبئة جميع الحقول!", text_color="#EF4444")
             return
 
@@ -280,7 +361,7 @@ class ProfessionalSchoolApp(ctk.CTk):
             conn = self.get_connection()
             cursor = conn.cursor()
 
-            student_id = self.get_or_create_student(cursor, student, grade_lvl, cls_name)
+            student_id = self.get_or_create_student(cursor, student, grade_lvl, cls_name, section)
 
             cursor.execute('''
                 INSERT INTO Grades (student_id, subject, teacher_name, exam_type, score, max_score, percentage, term)
@@ -300,24 +381,40 @@ class ProfessionalSchoolApp(ctk.CTk):
     def save_skill(self):
         student = self.s_student.get().strip()
         subject = self.s_subject.get().strip()
-        skill = self.s_skill.get().strip()
-        is_m = 1 if self.s_mastered.get() == "متقن" else 0
 
-        if not all([student, subject, skill]):
-            self.s_status.configure(text="يرجى إكمال البيانات!", text_color="#EF4444")
+        if not student or not subject:
+            self.s_status.configure(text="يرجى كتابة اسم الطالبة والمادة!", text_color="#EF4444")
+            return
+
+        valid_entries = []
+        for r in self.skill_rows:
+            sk_name = r["entry"].get().strip()
+            is_m = 1 if r["combo"].get() == "متقن" else 0
+            if sk_name:
+                valid_entries.append((sk_name, is_m))
+
+        if not valid_entries:
+            self.s_status.configure(text="يرجى كتابة مهارة واحدة على الأقل!", text_color="#EF4444")
             return
 
         conn = self.get_connection()
         cursor = conn.cursor()
-        student_id = self.get_or_create_student(cursor, student, "غير محدد", "غير محدد")
+        student_id = self.get_or_create_student(cursor, student, "غير محدد", "غير محدد", "عام")
 
-        cursor.execute("INSERT INTO Skills (student_id, subject, skill_name, is_mastered) VALUES (?, ?, ?, ?)",
-                       (student_id, subject, skill, is_m))
+        for sk_name, is_m in valid_entries:
+            cursor.execute("INSERT INTO Skills (student_id, subject, skill_name, is_mastered) VALUES (?, ?, ?, ?)",
+                           (student_id, subject, sk_name, is_m))
+        
         conn.commit()
         conn.close()
 
-        self.s_status.configure(text="تم حفظ المهارة بنجاح!", text_color="#10B981")
-        self.s_skill.delete(0, 'end')
+        self.s_status.configure(text=f"تم حفظ ({len(valid_entries)}) مهارة بنجاح!", text_color="#10B981")
+
+        # إعادة ضبط خيارات المهارات إلى صف فارغ واحد
+        for item in self.skill_rows:
+            item["frame"].destroy()
+        self.skill_rows.clear()
+        self.add_skill_row()
 
     def save_attendance(self):
         student = self.a_student.get().strip()
@@ -330,7 +427,7 @@ class ProfessionalSchoolApp(ctk.CTk):
 
         conn = self.get_connection()
         cursor = conn.cursor()
-        student_id = self.get_or_create_student(cursor, student, "غير محدد", "غير محدد")
+        student_id = self.get_or_create_student(cursor, student, "غير محدد", "غير محدد", "عام")
 
         cursor.execute("INSERT INTO Attendance (student_id, status, date_str) VALUES (?, ?, ?)",
                        (student_id, status, date_str))

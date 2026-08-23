@@ -1,67 +1,47 @@
 import sqlite3
-import os
 
-def get_db_path():
-    """تحديد المسار المطلق لقاعدة البيانات ليعمل بسلاسة مع Python و PyInstaller EXE"""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, "school_system.db")
-
-def init_db():
-    conn = sqlite3.connect(get_db_path())
+def init_db(db_path):
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON;")
-
-    # 1. جدول الطالبات (Primary Key)
+    
+    # 1. جدول الطالبات مع إضافة القسم
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS Students (
             student_id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_name TEXT UNIQUE NOT NULL,
-            grade_level TEXT NOT NULL,
-            class_name TEXT NOT NULL
+            grade_level TEXT,
+            class_name TEXT,
+            section TEXT DEFAULT 'عام'
         )
     ''')
-
-    # 2. جدول الدرجات والاختبارات (Fact Table)
+    
+    # 2. جدول الدرجات (نوع الاختبار مفتوح TEXT)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS Grades (
             grade_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            subject TEXT NOT NULL,
-            teacher_name TEXT NOT NULL,
-            exam_type TEXT NOT NULL,
-            score REAL NOT NULL,
-            max_score REAL NOT NULL,
-            percentage REAL NOT NULL,
-            term TEXT NOT NULL,
-            FOREIGN KEY (student_id) REFERENCES Students (student_id) ON DELETE CASCADE
+            student_id INTEGER,
+            subject TEXT,
+            teacher_name TEXT,
+            exam_type TEXT,
+            score REAL,
+            max_score REAL,
+            percentage REAL,
+            term TEXT,
+            FOREIGN KEY (student_id) REFERENCES Students(student_id)
         )
     ''')
-
-    # 3. جدول المهارات
+    
+    # 3. جدول المهارات (يدعم عدة مهارات لكل طالب)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS Skills (
             skill_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            subject TEXT NOT NULL,
-            skill_name TEXT NOT NULL,
-            is_mastered INTEGER NOT NULL CHECK (is_mastered IN (0, 1)),
-            FOREIGN KEY (student_id) REFERENCES Students (student_id) ON DELETE CASCADE
+            student_id INTEGER,
+            subject TEXT,
+            skill_name TEXT,
+            is_mastered INTEGER,
+            FOREIGN KEY (student_id) REFERENCES Students(student_id)
         )
     ''')
-
-    # 4. جدول الغياب والحضور
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Attendance (
-            attendance_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            date_str TEXT NOT NULL,
-            FOREIGN KEY (student_id) REFERENCES Students (student_id) ON DELETE CASCADE
-        )
-    ''')
-
+    
     conn.commit()
     conn.close()
-
-if __name__ == "__main__":
-    init_db()
