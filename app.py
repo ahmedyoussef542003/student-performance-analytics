@@ -16,10 +16,9 @@ class ProfessionalSchoolApp(ctk.CTk):
         self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "school_system.db")
         self.init_db()
 
-        # قائمة لتخزين صفوف عناصر المهارات الديناميكية
         self.skill_rows = []
 
-        # --- Grid Layout (Sidebar + Main Content) ---
+        # --- Grid Layout ---
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -37,7 +36,7 @@ class ProfessionalSchoolApp(ctk.CTk):
         self.btn_skills = ctk.CTkButton(self.sidebar_frame, text="تقييم المهارات", font=("Segoe UI", 14), fg_color="transparent", text_color=("gray10", "gray90"), command=self.show_skills_tab)
         self.btn_skills.grid(row=2, column=0, padx=15, pady=10, sticky="ew")
 
-        self.btn_attendance = ctk.CTkButton(self.sidebar_frame, text="الغياب والحضور", font=("Segoe UI", 14), fg_color="transparent", text_color=("gray10", "gray90"), command=self.show_attendance_tab)
+        self.btn_attendance = ctk.CTkButton(self.sidebar_frame, text="الغياب والحضور الشهري", font=("Segoe UI", 14), fg_color="transparent", text_color=("gray10", "gray90"), command=self.show_attendance_tab)
         self.btn_attendance.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
 
         self.btn_db_info = ctk.CTkButton(self.sidebar_frame, text="بيانات الاتصال 🔍", font=("Segoe UI", 14), fg_color="transparent", text_color=("gray10", "gray90"), command=self.show_db_info_tab)
@@ -47,7 +46,6 @@ class ProfessionalSchoolApp(ctk.CTk):
         self.main_container = ctk.CTkFrame(self, corner_radius=15, fg_color="#1E1E1E")
         self.main_container.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
-        # Views setup
         self.views = {}
         self.setup_views()
         self.show_grades_tab()
@@ -90,6 +88,7 @@ class ProfessionalSchoolApp(ctk.CTk):
                 FOREIGN KEY (student_id) REFERENCES Students (student_id) ON DELETE CASCADE
             )
         ''')
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Skills (
                 skill_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,12 +99,15 @@ class ProfessionalSchoolApp(ctk.CTk):
                 FOREIGN KEY (student_id) REFERENCES Students (student_id) ON DELETE CASCADE
             )
         ''')
+
+        # تحديث هيكل جدول الحضور ليكون شهرياً وتجميعياً
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Attendance (
                 attendance_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_id INTEGER NOT NULL,
-                status TEXT NOT NULL,
-                date_str TEXT NOT NULL,
+                month_year TEXT NOT NULL,
+                total_days INTEGER NOT NULL,
+                attended_days INTEGER NOT NULL,
                 FOREIGN KEY (student_id) REFERENCES Students (student_id) ON DELETE CASCADE
             )
         ''')
@@ -167,13 +169,11 @@ class ProfessionalSchoolApp(ctk.CTk):
         self.s_student = self.create_input(scroll_skills, "اسم الطالبة:")
         self.s_subject = self.create_input(scroll_skills, "المادة:")
 
-        # منطقة المهارات الديناميكية
         ctk.CTkLabel(scroll_skills, text="المهارات والتقييم:", font=("Segoe UI", 14, "bold")).pack(anchor="e", padx=50, pady=(15, 5))
         
         self.skills_container = ctk.CTkFrame(scroll_skills, fg_color="transparent")
         self.skills_container.pack(fill="x", padx=50, pady=5)
 
-        # زر إضافة مهارة جديدة (+)
         btn_add_skill = ctk.CTkButton(
             scroll_skills, 
             text="+ إضافة مهارة أخرى", 
@@ -193,24 +193,18 @@ class ProfessionalSchoolApp(ctk.CTk):
         self.s_status.pack()
 
         self.views["skills"] = v_skills
-        
-        # إدراج صف المهارة الأول تلقائياً عند تشغيل الواجهة
         self.add_skill_row()
 
-        # ---------------- 3. Attendance View ----------------
+        # ---------------- 3. Attendance View (Monthly Updated) ----------------
         v_att = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        ctk.CTkLabel(v_att, text="تسجيل الغياب والحضور", font=("Segoe UI", 22, "bold")).pack(pady=(15, 20))
+        ctk.CTkLabel(v_att, text="رصد الحضور والغياب الشهري", font=("Segoe UI", 22, "bold")).pack(pady=(15, 20))
+        
         self.a_student = self.create_input(v_att, "اسم الطالبة:")
+        self.a_month = self.create_input(v_att, "الشهر والسنة (YYYY-MM):")
+        self.a_total_days = self.create_input(v_att, "إجمالي الأيام المستحقة (مثال: 20):")
+        self.a_attended_days = self.create_input(v_att, "عدد أيام الحضور الفعلية:")
 
-        lbl3 = ctk.CTkLabel(v_att, text="الحالة:", font=("Segoe UI", 13))
-        lbl3.pack(anchor="e", padx=50, pady=(5, 2))
-        self.a_status_combo = ctk.CTkComboBox(v_att, values=["حاضر", "غائب بعذر", "غائب بدون عذر", "تأخير"], width=500, height=38, justify="right", state="readonly")
-        self.a_status_combo.set("حاضر")
-        self.a_status_combo.pack(pady=5)
-
-        self.a_date = self.create_input(v_att, "التاريخ (YYYY-MM-DD):")
-
-        btn_a = ctk.CTkButton(v_att, text="حفظ حالة الحضور", command=self.save_attendance, height=42, width=500, font=("Segoe UI", 14, "bold"), fg_color="#EF4444", hover_color="#DC2626")
+        btn_a = ctk.CTkButton(v_att, text="حفظ ملخص الحضور الشهري", command=self.save_attendance, height=42, width=500, font=("Segoe UI", 14, "bold"), fg_color="#EF4444", hover_color="#DC2626")
         btn_a.pack(pady=20)
         self.a_status = ctk.CTkLabel(v_att, text="", font=("Segoe UI", 13))
         self.a_status.pack()
@@ -239,7 +233,6 @@ class ProfessionalSchoolApp(ctk.CTk):
         row_frame = ctk.CTkFrame(self.skills_container, fg_color="transparent")
         row_frame.pack(fill="x", pady=4)
 
-        # زر حذف الصف
         btn_remove = ctk.CTkButton(
             row_frame, text="✕", width=30, height=36, 
             fg_color="#EF4444", hover_color="#B91C1C",
@@ -247,7 +240,6 @@ class ProfessionalSchoolApp(ctk.CTk):
         )
         btn_remove.pack(side="left", padx=(0, 5))
 
-        # ComboBox حالة المهارة
         combo_status = ctk.CTkComboBox(
             row_frame, values=["متقن", "غير متقن"], 
             width=130, height=36, justify="right", state="readonly"
@@ -255,7 +247,6 @@ class ProfessionalSchoolApp(ctk.CTk):
         combo_status.set("متقن")
         combo_status.pack(side="left", padx=5)
 
-        # Entry اسم المهارة
         entry_skill = ctk.CTkEntry(
             row_frame, placeholder_text="اسم المهارة", 
             width=320, height=36, justify="right", font=("Segoe UI", 13)
@@ -270,7 +261,7 @@ class ProfessionalSchoolApp(ctk.CTk):
 
     def remove_skill_row(self, row_frame):
         if len(self.skill_rows) <= 1:
-            return  # الإبقاء على صف واحد على الأقل
+            return
         
         self.skill_rows = [r for r in self.skill_rows if r["frame"] != row_frame]
         row_frame.destroy()
@@ -410,7 +401,6 @@ class ProfessionalSchoolApp(ctk.CTk):
 
         self.s_status.configure(text=f"تم حفظ ({len(valid_entries)}) مهارة بنجاح!", text_color="#10B981")
 
-        # إعادة ضبط خيارات المهارات إلى صف فارغ واحد
         for item in self.skill_rows:
             item["frame"].destroy()
         self.skill_rows.clear()
@@ -418,24 +408,40 @@ class ProfessionalSchoolApp(ctk.CTk):
 
     def save_attendance(self):
         student = self.a_student.get().strip()
-        status = self.a_status_combo.get()
-        date_str = self.a_date.get().strip()
+        month_year = self.a_month.get().strip()
+        total_str = self.a_total_days.get().strip()
+        attended_str = self.a_attended_days.get().strip()
 
-        if not all([student, date_str]):
-            self.a_status.configure(text="يرجى إدخال البيانات كاملة!", text_color="#EF4444")
+        if not all([student, month_year, total_str, attended_str]):
+            self.a_status.configure(text="يرجى إدخال جميع البيانات!", text_color="#EF4444")
             return
 
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        student_id = self.get_or_create_student(cursor, student, "غير محدد", "غير محدد", "عام")
+        try:
+            total_days = int(total_str)
+            attended_days = int(attended_str)
 
-        cursor.execute("INSERT INTO Attendance (student_id, status, date_str) VALUES (?, ?, ?)",
-                       (student_id, status, date_str))
-        conn.commit()
-        conn.close()
+            if attended_days > total_days:
+                self.a_status.configure(text="خطأ: أيام الحضور لا يمكن أن تتجاوز الإجمالي!", text_color="#EF4444")
+                return
 
-        self.a_status.configure(text="تم حفظ حالة الحضور بنجاح!", text_color="#10B981")
-        self.a_date.delete(0, 'end')
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            student_id = self.get_or_create_student(cursor, student, "غير محدد", "غير محدد", "عام")
+
+            cursor.execute('''
+                INSERT INTO Attendance (student_id, month_year, total_days, attended_days) 
+                VALUES (?, ?, ?, ?)
+            ''', (student_id, month_year, total_days, attended_days))
+
+            conn.commit()
+            conn.close()
+
+            self.a_status.configure(text="تم حفظ بيانات الحضور الشهري بنجاح!", text_color="#10B981")
+            self.a_attended_days.delete(0, 'end')
+        except ValueError:
+            self.a_status.configure(text="خطأ: يرجى كتابة أرقام صحيحة في عدد الأيام!", text_color="#EF4444")
+        except Exception as e:
+            self.a_status.configure(text=f"خطأ: {e}", text_color="#EF4444")
 
 if __name__ == "__main__":
     app = ProfessionalSchoolApp()

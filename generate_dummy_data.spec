@@ -1,81 +1,142 @@
 import sqlite3
 import random
-from datetime import datetime, timedelta
 import os
 
-# المسار الظاهر بالضبط في شاشة التطبيق لديك
-db_path = r"E:\BI Track of Data Camp\School App\dist\app\_internal\school_system.db"
+# مسار قاعدة البيانات
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "school_system.db")
 
-# التأكد من وجود الملف في المسار
-if not os.path.exists(db_path):
-    print(f"❌ الملف غير موجود في: {db_path}")
-else:
-    conn = sqlite3.connect(db_path)
+def generate_data():
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON;")
 
-    # 1. إضافة الطالبات
-    students_data = [
-        ("سارة أحمد محمد", "الصف الأول الثانوي", "1/1"),
-        ("مريم محمود علي", "الصف الأول الثانوي", "1/1"),
-        ("فاطمة عمر حسن", "الصف الأول الثانوي", "1/2"),
-        ("نور خالد إبراهيم", "الصف الأول الثانوي", "1/2"),
-        ("آية يوسف مصطفى", "الصف الثاني الثانوي", "2/1"),
-        ("شهد طارق السيد", "الصف الثاني الثانوي", "2/1"),
-        ("ريم عادل عبد الرحمن", "الصف الثاني الثانوي", "2/2"),
-        ("هنا عمرو عبد الله", "الصف الثالث الثانوي", "3/1"),
-        ("سلمى محمد فتحي", "الصف الثالث الثانوي", "3/1"),
-        ("لجين أحمد سعيد", "الصف الثالث الثانوي", "3/2")
+    print("⏳ جاري تنظيف البيانات القديمة وإنشاء بيانات تجريبية جديدة...")
+    
+    # تفريغ الجداول القديمة لإعادة التعبئة (اختياري)
+    cursor.execute("DELETE FROM Attendance;")
+    cursor.execute("DELETE FROM Student_Skills_Evaluation;")
+    cursor.execute("DELETE FROM Grades;")
+    cursor.execute("DELETE FROM Students;")
+    cursor.execute("DELETE FROM Subject_Skills;")
+
+    # 1. إدخال دليل المهارات المعتمدة للمواد (Subject_Skills)
+    skills_data = [
+        # اللغة العربية
+        ("اللغة العربية", "القراءة الجهرية والمعبرة"),
+        ("اللغة العربية", "الفهم الاستيعابي والتحليل"),
+        ("اللغة العربية", "التعبير الكتابي والإملاء"),
+        ("اللغة العربية", "القواعد النحوية والصرفية"),
+        # English
+        ("English", "Reading Comprehension"),
+        ("English", "Writing & Grammar"),
+        ("English", "Listening & Speaking"),
+        ("English", "Vocabulary Usage"),
+        # الرياضيات
+        ("الرياضيات", "العمليات الحسابية الأساسية"),
+        ("الرياضيات", "حل المشكلات والتفكير الناقد"),
+        ("الرياضيات", "الهندسة والقياس"),
+        # العلوم
+        ("العلوم", "التفكير العلمي والملاحظة"),
+        ("العلوم", "فهم المفاهيم والتجارب")
+    ]
+    cursor.executemany("INSERT INTO Subject_Skills (subject, skill_name) VALUES (?, ?)", skills_data)
+
+    # جلب جميع المهارات مع id
+    cursor.execute("SELECT skill_id, subject FROM Subject_Skills")
+    all_skills = cursor.fetchall()
+
+    # 2. توليد 40 طالبة
+    first_names = ["سارة", "نورة", "مريم", "فاطمة", "ريم", "شهد", "الجوهرة", "ليان", "جود", "يارا", "حنين", "سلمى", "أسماء", "ريناد", "أميرة"]
+    father_names = ["محمد", "أحمد", "عبدالله", "علي", "خالد", "سعود", "عمر", "إبراهيم", "يوسف", "حسن", "سعيد", "فهد"]
+    family_names = ["الغامدي", "الزهراني", "الشهري", "القحطاني", "الدوسري", "العتيبي", "المطيري", "العنزي", "الحربي", "السيد"]
+
+    grades_list = ["الصف الأول المتوسط", "الصف الثاني المتوسط", "الصف الثالث المتوسط"]
+    classes_list = ["1/1", "1/2", "2/1", "2/2", "3/1"]
+    sections = ["عام", "تحفيظ"]
+
+    students = []
+    student_ids = []
+
+    for _ in range(40):
+        name = f"{random.choice(first_names)} {random.choice(father_names)} {random.choice(family_names)}"
+        # تلافي تكرار الأسماء
+        while name in [s[0] for s in students]:
+            name = f"{random.choice(first_names)} {random.choice(father_names)} {random.choice(family_names)}"
+            
+        grade = random.choice(grades_list)
+        cls = random.choice(classes_list)
+        sec = random.choice(sections)
+        
+        cursor.execute("INSERT INTO Students (student_name, grade_level, class_name, section) VALUES (?, ?, ?, ?)",
+                       (name, grade, cls, sec))
+        student_ids.append(cursor.lastrowid)
+
+    print(f"✅ تم إنشاء {len(student_ids)} طالبة بنجاح.")
+
+    # 3. توليد درجات الأكاديمية (Grades)
+    subjects_teachers = [
+        ("اللغة العربية", "أ. أمل العتيبي"),
+        ("English", "أ. سارة الغامدي"),
+        ("الرياضيات", "أ. نورة الشهري"),
+        ("العلوم", "أ. مريم القحطاني"),
+        ("الدراسات الإسلامية", "أ. فاطمة الدوسري")
     ]
 
-    student_ids = []
-    for name, grade, cls in students_data:
-        cursor.execute("INSERT OR IGNORE INTO Students (student_name, grade_level, class_name) VALUES (?, ?, ?)", (name, grade, cls))
-        cursor.execute("SELECT student_id FROM Students WHERE student_name = ?", (name,))
-        student_ids.append(cursor.fetchone()[0])
+    exam_types = ["اختبار قصير 1", "اختبار قصير 2", "منتصف الفصل", "النهائي"]
+    terms = ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
 
-    # 2. إضافة الدرجات
-    subjects = ["الرياضيات", "الفيزياء", "الكيمياء", "اللغة العربية", "اللغة الإنجليزية"]
-    teachers = ["أ/ نادية", "أ/ إيمان", "أ/ سحر", "أ/ منى"]
-    exam_types = ["اختبار قبلي", "كويز 1", "اختبار فترة 1", "اختبار فترة 2", "اختبار بعدي"]
-
-    for s_id in student_ids:
-        for subj in subjects:
+    grades_count = 0
+    for st_id in student_ids:
+        for subj, teacher in subjects_teachers:
             for exam in exam_types:
-                max_score = 100.0 if "اختبار" in exam else 20.0
-                score = round(random.uniform(max_score * 0.5, max_score), 1)
-                percentage = round((score / max_score) * 100, 2)
-                
+                max_sc = 100.0 if "النهائي" in exam else (50.0 if "منتصف" in exam else 20.0)
+                # توليد درجات واقعية (تتراوح بين 60% و 100%)
+                score = round(random.uniform(max_sc * 0.6, max_sc), 1)
+                percentage = round((score / max_sc) * 100, 2)
+                term = random.choice(terms)
+
                 cursor.execute('''
                     INSERT INTO Grades (student_id, subject, teacher_name, exam_type, score, max_score, percentage, term)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (s_id, subj, random.choice(teachers), exam, score, max_score, percentage, "الفصل الأول"))
+                ''', (st_id, subj, teacher, exam, score, max_sc, percentage, term))
+                grades_count += 1
 
-    # 3. إضافة المهارات
-    skills_list = ["التفكير الناقد", "حل المشكلات", "التواصل الفعال", "العمل الجماعي", "التحليل البياني"]
-    for s_id in student_ids:
-        for subj in random.sample(subjects, 3):
-            for skill in random.sample(skills_list, 2):
-                is_m = random.choice([1, 1, 1, 0])
-                cursor.execute('''
-                    INSERT INTO Skills (student_id, subject, skill_name, is_mastered)
-                    VALUES (?, ?, ?, ?)
-                ''', (s_id, subj, skill, is_m))
+    print(f"✅ تم إضافة {grades_count} سجل درجات.")
 
-    # 4. إضافة الحضور والغياب
-    start_date = datetime.now() - timedelta(days=20)
-    attendance_statuses = ["حاضر", "حاضر", "حاضر", "حاضر", "غائب بعذر", "غائب بدون عذر", "تأخير"]
-
-    for day in range(15):
-        current_date = (start_date + timedelta(days=day)).strftime('%Y-%m-%d')
-        for s_id in student_ids:
-            status = random.choice(attendance_statuses)
+    # 4. توليد تقييم المهارات (Student_Skills_Evaluation)
+    eval_count = 0
+    for st_id in student_ids:
+        # تقييم الطالبة في معظم المهارات المتاحة
+        for sk_id, subj in all_skills:
+            # 85% احتمال أن تكون الطالبة متقنة للمهارة
+            is_mastered = 1 if random.random() < 0.85 else 0
             cursor.execute('''
-                INSERT INTO Attendance (student_id, status, date_str)
+                INSERT OR IGNORE INTO Student_Skills_Evaluation (student_id, skill_id, is_mastered)
                 VALUES (?, ?, ?)
-            ''', (s_id, status, current_date))
+            ''', (st_id, sk_id, is_mastered))
+            eval_count += 1
 
-    # حفظ وإغلاق الاتصال نهائياً
+    print(f"✅ تم إضافة {eval_count} تقييم مهارة.")
+
+    # 5. توليد سجلات الحضور والغياب الشهري (Attendance)
+    months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"]
+    att_count = 0
+    for st_id in student_ids:
+        for month in months:
+            total_days = 20
+            # أيام الحضور الفعلية بين 16 و 20 يوم
+            attended = random.randint(16, 20)
+            cursor.execute('''
+                INSERT OR IGNORE INTO Attendance (student_id, month_year, total_days, attended_days)
+                VALUES (?, ?, ?, ?)
+            ''', (st_id, month, total_days, attended))
+            att_count += 1
+
+    print(f"✅ تم إضافة {att_count} سجل حضور شهري.")
+
     conn.commit()
     conn.close()
+    print("\n🎉 تم إنشاء قاعدة البيانات المكتملة بنجاح وبها كافة البيانات التجريبية!")
 
-    print("✅Data inserted successfully! Please click refresh in the app.")
+if __name__ == "__main__":
+    generate_data()
