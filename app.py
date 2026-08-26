@@ -10,8 +10,17 @@ class ProfessionalSchoolApp(ctk.CTk):
         super().__init__()
 
         self.title("نظام التحليل المدرسي الشامل | Dashboard")
-        self.geometry("900x680")
-        self.resizable(False, False)
+        
+        # --- حل مشكلة التكبير وإبعاد النافذة ---
+        self.geometry("1100x750")
+        self.minsize(900, 600)
+        self.resizable(True, True)
+        
+        # فتح النافذة مكبرة تلقائياً عند التشغيل
+        try:
+            self.state("zoomed")
+        except Exception:
+            pass
 
         self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "school_system.db")
         self.init_db()
@@ -78,6 +87,7 @@ class ProfessionalSchoolApp(ctk.CTk):
             CREATE TABLE IF NOT EXISTS Grades (
                 grade_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_id INTEGER NOT NULL,
+                academic_year TEXT NOT NULL DEFAULT '2025 - 2026',
                 subject TEXT NOT NULL,
                 teacher_name TEXT NOT NULL,
                 exam_type TEXT NOT NULL,
@@ -88,6 +98,12 @@ class ProfessionalSchoolApp(ctk.CTk):
                 FOREIGN KEY (student_id) REFERENCES Students (student_id) ON DELETE CASCADE
             )
         ''')
+
+        # إضافة عمود academic_year إن لم يكن موجوداً مسبقاً في جدول الدرجات
+        try:
+            cursor.execute("ALTER TABLE Grades ADD COLUMN academic_year TEXT NOT NULL DEFAULT '2025 - 2026'")
+        except sqlite3.OperationalError:
+            pass
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Skills (
@@ -100,7 +116,6 @@ class ProfessionalSchoolApp(ctk.CTk):
             )
         ''')
 
-        # تحديث هيكل جدول الحضور ليكون شهرياً وتجميعياً
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Attendance (
                 attendance_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,6 +152,13 @@ class ProfessionalSchoolApp(ctk.CTk):
 
         self.g_student = self.create_input(scroll, "اسم الطالبة الثلاثي:")
         
+        # --- خانة السنة الدراسية ---
+        lbl_year = ctk.CTkLabel(scroll, text="السنة الدراسية:", font=("Segoe UI", 13))
+        lbl_year.pack(anchor="e", padx=50, pady=(5, 2))
+        self.g_year = ctk.CTkComboBox(scroll, values=["2023 - 2024", "2024 - 2025", "2025 - 2026", "2026 - 2027"], width=500, height=38, justify="right", state="readonly")
+        self.g_year.set("2025 - 2026")
+        self.g_year.pack(pady=4)
+
         lbl_sec = ctk.CTkLabel(scroll, text="القسم:", font=("Segoe UI", 13))
         lbl_sec.pack(anchor="e", padx=50, pady=(5, 2))
         self.g_section = ctk.CTkComboBox(scroll, values=["عام", "تحفيظ"], width=500, height=38, justify="right", state="readonly")
@@ -331,6 +353,7 @@ class ProfessionalSchoolApp(ctk.CTk):
 
     def save_grade(self):
         student = self.g_student.get().strip()
+        academic_year = self.g_year.get()
         section = self.g_section.get()
         grade_lvl = self.g_grade.get().strip()
         cls_name = self.g_class.get().strip()
@@ -355,9 +378,9 @@ class ProfessionalSchoolApp(ctk.CTk):
             student_id = self.get_or_create_student(cursor, student, grade_lvl, cls_name, section)
 
             cursor.execute('''
-                INSERT INTO Grades (student_id, subject, teacher_name, exam_type, score, max_score, percentage, term)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (student_id, subject, teacher, exam, score, max_score, percentage, "الفصل الأول"))
+                INSERT INTO Grades (student_id, academic_year, subject, teacher_name, exam_type, score, max_score, percentage, term)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, academic_year, subject, teacher, exam, score, max_score, percentage, "الفصل الأول"))
 
             conn.commit()
             conn.close()

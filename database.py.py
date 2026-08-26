@@ -1,11 +1,33 @@
 import sqlite3
 
-def init_db(db_path="school_system.db"):
+def get_connection(db_path="school_system.db"):
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
+
+def seed_skills(cursor):
+    """إضافة مهارات أولية معتمدة للغات والمواد"""
+    default_skills = [
+        ("اللغة العربية", "القراءة الجهرية والمعبرة"),
+        ("اللغة العربية", "الفهم الاستيعابي والتحليل"),
+        ("اللغة العربية", "التعبير الكتابي والإملاء"),
+        ("اللغة العربية", "القواعد النحوية والصرفية"),
+        ("English", "Reading Comprehension"),
+        ("English", "Writing & Grammar"),
+        ("English", "Listening & Speaking"),
+        ("English", "Vocabulary Usage"),
+        ("الرياضيات", "العمليات الحسابية الأساسية"),
+        ("الرياضيات", "حل المشكلات والتفكير الناقد"),
+        ("الرياضيات", "الهندسة والقياس")
+    ]
+    cursor.executemany('''
+        INSERT OR IGNORE INTO Subject_Skills (subject, skill_name) 
+        VALUES (?, ?)
+    ''', default_skills)
+
+def init_db(db_path="school_system.db"):
+    conn = get_connection(db_path)
     cursor = conn.cursor()
-    
-    # تفعيل قيود المفاتيح الأجنبية
-    cursor.execute("PRAGMA foreign_keys = ON;")
     
     # 1. جدول الطالبات
     cursor.execute('''
@@ -18,7 +40,7 @@ def init_db(db_path="school_system.db"):
         )
     ''')
     
-    # 2. جدول دليل المهارات المعتمدة للمواد (Subject Skills Master)
+    # 2. جدول دليل المهارات المعتمدة للمواد
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS Subject_Skills (
             skill_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +51,7 @@ def init_db(db_path="school_system.db"):
         )
     ''')
     
-    # 3. جدول تقييم مهارات الطالبات (Student Skill Evaluations)
+    # 3. جدول تقييم مهارات الطالبات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS Student_Skills_Evaluation (
             eval_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,6 +70,7 @@ def init_db(db_path="school_system.db"):
         CREATE TABLE IF NOT EXISTS Grades (
             grade_id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
+            academic_year TEXT NOT NULL DEFAULT '2025 - 2026',
             subject TEXT NOT NULL,
             teacher_name TEXT NOT NULL,
             exam_type TEXT NOT NULL,
@@ -58,6 +81,12 @@ def init_db(db_path="school_system.db"):
             FOREIGN KEY (student_id) REFERENCES Students (student_id) ON DELETE CASCADE
         )
     ''')
+
+    # التأكد من التوافقية عند إدخال عمود academic_year
+    try:
+        cursor.execute("ALTER TABLE Grades ADD COLUMN academic_year TEXT NOT NULL DEFAULT '2025 - 2026'")
+    except sqlite3.OperationalError:
+        pass
     
     # 5. جدول الحضور والغياب الشهري
     cursor.execute('''
@@ -72,37 +101,9 @@ def init_db(db_path="school_system.db"):
         )
     ''')
     
-    # تعبئة مهارات قياسية أولية للمواد (Seed Data)
     seed_skills(cursor)
-    
     conn.commit()
     conn.close()
-
-def seed_skills(cursor):
-    """إضافة مهارات أولية معتمدة للغات والمواد"""
-    default_skills = [
-        # اللغة العربية
-        ("اللغة العربية", "القراءة الجهرية والمعبرة"),
-        ("اللغة العربية", "الفهم الاستيعابي والتحليل"),
-        ("اللغة العربية", "التعبير الكتابي والإملاء"),
-        ("اللغة العربية", "القواعد النحوية والصرفية"),
-        
-        # اللغة الإنجليزية
-        ("English", "Reading Comprehension"),
-        ("English", "Writing & Grammar"),
-        ("English", "Listening & Speaking"),
-        ("English", "Vocabulary Usage"),
-        
-        # الرياضيات
-        ("الرياضيات", "العمليات الحسابية الأساسية"),
-        ("الرياضيات", "حل المشكلات والتفكير الناقد"),
-        ("الرياضيات", "الهندسة والقياس")
-    ]
-    
-    cursor.executemany('''
-        INSERT OR IGNORE INTO Subject_Skills (subject, skill_name) 
-        VALUES (?, ?)
-    ''', default_skills)
 
 if __name__ == "__main__":
     init_db()
