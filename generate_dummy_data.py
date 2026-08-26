@@ -25,8 +25,79 @@ SUBJECTS = ["اللغة العربية", "English", "الرياضيات"]
 EXAM_TYPES = ["منتصف الفصل", "الاختبار النهائي", "اختبار قصير"]
 TEACHERS = ["أ/ نادية", "أ/ أمل", "أ/ فاطمة", "أ/ وفاء"]
 
-# مسار قاعدة البيانات المباشر من الصورة
+# مسار قاعدة البيانات
 DB_PATH = r"E:\BI Track of Data Camp\School App\dist\app\_internal\school_system.db"
+
+def init_tables(cursor):
+    """إنشاء الجداول في حال عدم وجودها"""
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Students (
+            student_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_name TEXT NOT NULL,
+            grade_level TEXT,
+            class_name TEXT,
+            section TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Grades (
+            grade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            academic_year TEXT,
+            subject TEXT,
+            teacher_name TEXT,
+            exam_type TEXT,
+            score REAL,
+            max_score REAL,
+            percentage REAL,
+            term TEXT,
+            FOREIGN KEY (student_id) REFERENCES Students(student_id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Subject_Skills (
+            skill_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject TEXT,
+            skill_name TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Student_Skills_Evaluation (
+            eval_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            skill_id INTEGER,
+            is_mastered INTEGER,
+            FOREIGN KEY (student_id) REFERENCES Students(student_id),
+            FOREIGN KEY (skill_id) REFERENCES Subject_Skills(skill_id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Attendance (
+            attendance_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            month_year TEXT,
+            total_days INTEGER,
+            attended_days INTEGER,
+            FOREIGN KEY (student_id) REFERENCES Students(student_id)
+        )
+    ''')
+
+    # التأكد من وجود مهارات في الجدول، وإضافتها إذا كان الجدول فارغاً
+    cursor.execute("SELECT COUNT(*) FROM Subject_Skills")
+    if cursor.fetchone()[0] == 0:
+        default_skills = [
+            ("اللغة العربية", "القراءة الجهرية والنطق السليم"),
+            ("اللغة العربية", "الإعراب والتطبيق النحوي"),
+            ("English", "Reading Comprehension"),
+            ("English", "Grammar & Vocabulary"),
+            ("الرياضيات", "حل المعادلات الجبرية"),
+            ("الرياضيات", "التفكير الهندسي والبرهان")
+        ]
+        cursor.executemany("INSERT INTO Subject_Skills (subject, skill_name) VALUES (?, ?)", default_skills)
 
 def generate_random_name(existing_names):
     while True:
@@ -39,12 +110,16 @@ def add_new_students(db_path=DB_PATH, num_students=40):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
+    # إنشاء الجداول وتجهيز المهارات إن لم تكن موجودة
+    init_tables(cursor)
+    conn.commit()
+
     existing_names = set()
     cursor.execute("SELECT student_name FROM Students")
     for row in cursor.fetchall():
         existing_names.add(row[0])
 
-    print(f"🔄 جاري إضافة {num_students} طالبة إلى قاعدة البيانات في المسار المطلب...")
+    print(f"🔄 جاري إضافة {num_students} طالبة إلى قاعدة البيانات...")
 
     cursor.execute("SELECT skill_id, subject FROM Subject_Skills")
     skills_pool = cursor.fetchall()
@@ -115,7 +190,7 @@ def add_new_students(db_path=DB_PATH, num_students=40):
 
     conn.commit()
     conn.close()
-    print("✅ تم إدخال 40 طالبة بنجاح في قاعدة بيانات التطبيق! اضغط Refresh في Power BI الآن.")
+    print("✅ تم إدخال 40 طالبة بنجاح! قم بعمل Refresh في Power BI الآن.")
 
 if __name__ == "__main__":
     add_new_students()
